@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Granted Agent</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;margin:16px}
+  label{display:block;margin:8px 0 4px;font-weight:600}
+  input,textarea,button{width:100%;padding:10px;font-size:16px}
+  textarea{height:100px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  pre{background:#f6f6f6;padding:10px;white-space:pre-wrap}
+</style>
+<h1>Granted Agent</h1>
+<label>Message</label>
+<textarea id="msg" placeholder="Recommend a travel printer under $150"></textarea>
+<button id="send">Send</button>
+<pre id="chatOut"></pre>
+<script>
+async function post(url, body){
+  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  return await r.json();
+}
+send.onclick=async()=>{
+  chatOut.textContent='…';
+  const data=await post('/chat',{message:msg.value});
+  chatOut.textContent=JSON.stringify(data,null,2);
+};
+</script>
