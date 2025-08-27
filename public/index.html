@@ -1,27 +1,86 @@
 <!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Granted Agent</title>
 <style>
-  body{font-family:system-ui,-apple-system,sans-serif;margin:16px}
-  label{display:block;margin:8px 0 4px;font-weight:600}
-  input,textarea,button{width:100%;padding:10px;font-size:16px}
-  textarea{height:100px}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  pre{background:#f6f6f6;padding:10px;white-space:pre-wrap}
+  :root{--bg:#fff;--fg:#111;--muted:#666;--brand:#111}
+  body{margin:0;background:#f7f7f8;font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--fg)}
+  .wrap{max-width:420px;margin:0 auto;padding:14px}
+  .card{background:var(--bg);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:16px}
+  .h{font-weight:700;font-size:20px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .msgs{height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;padding:12px;background:#fff}
+  .msg{margin:6px 0;max-width:85%}
+  .me{margin-left:auto;text-align:right}
+  .me .bubble{background:#e8e8ef}
+  .them .bubble{background:#111;color:#fff}
+  .bubble{display:inline-block;padding:10px 12px;border-radius:14px}
+  form{display:flex;gap:8px;margin-top:12px}
+  textarea{flex:1;resize:none;height:70px;border:1px solid #ddd;border-radius:12px;padding:10px}
+  button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600}
+  button[disabled]{opacity:.6;cursor:not-allowed}
+  .hint{font-size:12px;color:#777;margin-top:8px}
 </style>
-<h1>Granted Agent</h1>
-<label>Message</label>
-<textarea id="msg" placeholder="Recommend a travel printer under $150"></textarea>
-<button id="send">Send</button>
-<pre id="chatOut"></pre>
+
+<div class="wrap">
+  <div class="card">
+    <h1 class="h">Granted Agent</h1>
+    <p class="sub">Try: “Recommend a travel printer under $150” or “Make me a bundle offer”.</p>
+
+    <div id="msgs" class="msgs"></div>
+
+    <form id="f">
+      <textarea id="q" placeholder="Type your question…"></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+    <div class="hint" id="hint"></div>
+  </div>
+</div>
+
 <script>
-async function post(url, body){
-  const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  return await r.json();
-}
-send.onclick=async()=>{
-  chatOut.textContent='…';
-  const data=await post('/chat',{message:msg.value});
-  chatOut.textContent=JSON.stringify(data,null,2);
-};
+  const msgs = document.getElementById('msgs');
+  const form = document.getElementById('f');
+  const q = document.getElementById('q');
+  const send = document.getElementById('send');
+  const hint = document.getElementById('hint');
+
+  function add(role, text){
+    const row = document.createElement('div');
+    row.className = 'msg ' + (role === 'user' ? 'me' : 'them');
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    b.textContent = text;
+    row.appendChild(b);
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = q.value.trim();
+    if(!message) return;
+    add('user', message);
+    q.value = ''; q.focus();
+    send.disabled = true; hint.textContent = 'Thinking…';
+
+    try{
+      const r = await fetch('/chat', {
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body: JSON.stringify({ message })
+      });
+      const data = await r.json();
+      const reply = (data && data.reply) ? String(data.reply) : 'Sorry, no reply.';
+      add('assistant', reply);
+      hint.textContent = '';
+    }catch(err){
+      add('assistant', 'Error contacting the agent.');
+      hint.textContent = String(err?.message || err);
+    }finally{
+      send.disabled = false;
+    }
+  });
+
+  // greet
+  add('assistant', 'Hi! Ask me about products, bundles, or order help.');
 </script>
