@@ -18,6 +18,8 @@
   .me .bubble{background:#e8e8ef}
   .them .bubble{background:#111;color:#fff}
   .bubble{display:inline-block;padding:10px 12px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
+  .bubble a{ text-decoration: underline; color: inherit; }
+  .bubble a:hover{ opacity:.85 }
   form{display:flex;gap:8px;margin-top:12px}
   textarea{flex:1;resize:none;height:70px;border:1px solid #ddd;border-radius:12px;padding:10px}
   button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600}
@@ -54,12 +56,21 @@
   const send = document.getElementById('send');
   const hint = document.getElementById('hint');
 
+  // Render a message row
   function add(role, text){
     const row = document.createElement('div');
     row.className = 'msg ' + (role === 'user' ? 'me' : 'them');
     const b = document.createElement('div');
     b.className = 'bubble';
-    b.textContent = text;
+
+    // User = plain text. Assistant = allow HTML so bundle links (<a>) work.
+    // (Our backend only returns safe HTML for bundle offers; everything else is plain text.)
+    if (role === 'assistant') {
+      b.innerHTML = text;
+    } else {
+      b.textContent = text;
+    }
+
     row.appendChild(b);
     msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
