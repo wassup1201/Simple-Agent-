@@ -8,13 +8,16 @@
   .wrap{max-width:420px;margin:0 auto;padding:14px}
   .card{background:var(--bg);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:16px}
   .h{font-weight:700;font-size:20px;margin:0 0 6px}
-  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .sub{color:var(--muted);font-size:13px;margin:0 10px 14px 0}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+  .chips button{background:#f1f1f5;color:#111;border:0;border-radius:999px;padding:8px 12px;cursor:pointer}
+  .chips button:hover{filter:brightness(.97)}
   .msgs{height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;padding:12px;background:#fff}
   .msg{margin:6px 0;max-width:85%}
   .me{margin-left:auto;text-align:right}
   .me .bubble{background:#e8e8ef}
   .them .bubble{background:#111;color:#fff}
-  .bubble{display:inline-block;padding:10px 12px;border-radius:14px}
+  .bubble{display:inline-block;padding:10px 12px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
   form{display:flex;gap:8px;margin-top:12px}
   textarea{flex:1;resize:none;height:70px;border:1px solid #ddd;border-radius:12px;padding:10px}
   button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600}
@@ -27,10 +30,17 @@
     <h1 class="h">Granted Agent</h1>
     <p class="sub">Try: “Recommend a travel printer under $150” or “Make me a bundle offer”.</p>
 
+    <!-- Quick-reply chips -->
+    <div class="chips">
+      <button data-msg="Do you have a discount code?">8% promo</button>
+      <button data-msg="Where is my order #1783? my email is alice@example.com">Order status</button>
+      <button data-mode="bundleOffer" data-msg="Create a bundle offer for the C80 printer and A4 paper.">Bundle offer</button>
+    </div>
+
     <div id="msgs" class="msgs"></div>
 
     <form id="f">
-      <textarea id="q" placeholder="Type your question…"></textarea>
+      <textarea id="q" placeholder="Type your question… (Enter to send, Shift+Enter for new line)"></textarea>
       <button id="send" type="submit">Send</button>
     </form>
     <div class="hint" id="hint"></div>
@@ -55,19 +65,15 @@
     msgs.scrollTop = msgs.scrollHeight;
   }
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const message = q.value.trim();
-    if(!message) return;
+  async function sendMessage(message, mode='free'){
     add('user', message);
     q.value = ''; q.focus();
     send.disabled = true; hint.textContent = 'Thinking…';
-
     try{
       const r = await fetch('/chat', {
         method:'POST',
         headers:{'content-type':'application/json'},
-        body: JSON.stringify({ message })
+        body: JSON.stringify({ message, mode })
       });
       const data = await r.json();
       const reply = (data && data.reply) ? String(data.reply) : 'Sorry, no reply.';
@@ -79,8 +85,34 @@
     }finally{
       send.disabled = false;
     }
+  }
+
+  // Form submit
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const message = q.value.trim();
+    if(!message) return;
+    sendMessage(message);
+  });
+
+  // Enter to send, Shift+Enter for newline
+  q.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter' && !e.shiftKey){
+      e.preventDefault();
+      form.dispatchEvent(new Event('submit'));
+    }
+  });
+
+  // Quick-reply chips
+  document.querySelectorAll('.chips button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const message = btn.dataset.msg || '';
+      const mode = btn.dataset.mode || 'free';
+      if(message) sendMessage(message, mode);
+    });
   });
 
   // greet
-  add('assistant', 'Hi! Ask me about products, bundles, or order help.');
+  add('assistant', 'Hi! Ask me about products, bundles, or order help. Tip: use code GRANT8 for 8% off.');
+  q.focus();
 </script>
