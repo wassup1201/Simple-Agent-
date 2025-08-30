@@ -9,27 +9,37 @@
   .card{background:var(--bg);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:16px}
   .h{font-weight:700;font-size:20px;margin:0 0 6px}
   .sub{color:var(--muted);font-size:13px;margin:0 10px 14px 0}
+
+  /* chips */
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
   .chips button{background:#f1f1f5;color:#111;border:0;border-radius:999px;padding:8px 12px;cursor:pointer}
   .chips button:hover{filter:brightness(.97)}
+
+  /* message list */
   .msgs{height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;padding:12px;background:#fff}
   .msg{margin:6px 0;max-width:85%}
   .me{margin-left:auto;text-align:right}
   .me .bubble{background:#e8e8ef}
   .them .bubble{background:#111;color:#fff}
   .bubble{display:inline-block;padding:10px 12px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
-  .bubble a{ text-decoration: underline; color: inherit; }
-  .bubble a:hover{ opacity:.85 }
-  /* product card styles */
+  .bubble a{text-decoration:underline;color:inherit}
+  .bubble a:hover{opacity:.85}
+
+  /* product cards */
   .cardgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:6px 0}
-  .pCard{background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee}
-  .pCard a{display:block;text-decoration:none;color:inherit}
+  .pCard{background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;display:flex;flex-direction:column}
+  .pLink{display:block;text-decoration:none;color:inherit}
   .pImg{width:100%;aspect-ratio:1/1;object-fit:cover;background:#f6f6f7}
   .pT{font-weight:600;font-size:13px;padding:8px 8px 4px}
   .pP{font-size:12px;color:#444;padding:0 8px 10px}
+  .pBuy{margin:0 8px 10px;background:#111;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:600;cursor:pointer}
+  .pBuy[disabled]{opacity:.6;cursor:not-allowed}
+
+  /* simple input row */
   form{display:flex;gap:8px;margin-top:12px}
-  textarea{flex:1;resize:none;height:70px;border:1px solid #ddd;border-radius:12px;padding:10px}
-  button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600}
+  #q{flex:1;height:44px;border:1px solid #ddd;border-radius:12px;padding:0 12px;outline:none}
+  #q:focus{border-color:#bbb;box-shadow:0 0 0 3px rgba(0,0,0,.05)}
+  button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600;height:44px}
   button[disabled]{opacity:.6;cursor:not-allowed}
   .hint{font-size:12px;color:#777;margin-top:8px}
 </style>
@@ -39,7 +49,7 @@
     <h1 class="h">Granted Agent</h1>
     <p class="sub">Try these:</p>
 
-    <!-- Quick-reply chips -->
+    <!-- Quick chips -->
     <div class="chips">
       <button data-msg="Do you have a discount code?">8% promo</button>
       <button data-mode="bundleOffer" data-msg="Create a bundle offer for the C80 printer and A4 paper.">Bundle offer</button>
@@ -50,8 +60,9 @@
 
     <div id="msgs" class="msgs"></div>
 
+    <!-- SIMPLE input (single line) -->
     <form id="f">
-      <textarea id="q" placeholder="Type your question… (Enter to send, Shift+Enter for new line)"></textarea>
+      <input id="q" type="text" placeholder="Type a question…" autocomplete="off" enterkeyhint="send"/>
       <button id="send" type="submit">Send</button>
     </form>
     <div class="hint" id="hint"></div>
@@ -65,137 +76,166 @@
   const send = document.getElementById('send');
   const hint = document.getElementById('hint');
 
-  function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+
+  // add UTM tags for attribution
+  function withUTM(url){
+    try{
+      const u = new URL(url);
+      u.searchParams.set('utm_source','agent');
+      u.searchParams.set('utm_medium','widget');
+      u.searchParams.set('utm_campaign','onsite');
+      return u.toString();
+    }catch{ return url; }
+  }
 
   // Render a message row
   function add(role, htmlOrText){
+    const row=document.createElement('div');
+    row.className='msg '+(role==='user'?'me':'them');
+    const b=document.createElement('div');
+    b.className='bubble';
+    if(role==='assistant'){
+      b.innerHTML=htmlOrText;
+      b.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
+    }else{
+      b.textContent=htmlOrText;
+    }
+    row.appendChild(b);
+    msgs.appendChild(row);
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+
+  // STREAMING send
+  async function sendMessage(message, mode='free'){
+    add('user', message);
+    q.value=''; q.focus();
+    send.disabled = true; hint.textContent = 'Thinking…';
+
+    // Create an assistant bubble we fill as chunks arrive
     const row = document.createElement('div');
-    row.className = 'msg ' + (role === 'user' ? 'me' : 'them');
+    row.className = 'msg them';
     const b = document.createElement('div');
     b.className = 'bubble';
-
-    if (role === 'assistant') {
-      b.innerHTML = htmlOrText;                           // allow <a> and our product card HTML
-      // open links in new tab safely
-      b.querySelectorAll('a').forEach(a => { a.target='_blank'; a.rel='noopener noreferrer'; });
-    } else {
-      b.textContent = htmlOrText;                         // user is plain text
-    }
-
     row.appendChild(b);
     msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
-  }
 
-  async function sendMessage(message, mode='free'){
-    add('user', message);
-    q.value = ''; q.focus();
-    send.disabled = true; hint.textContent = 'Thinking…';
     try{
-      const r = await fetch('/chat', {
-        method:'POST',
-        headers:{'content-type':'application/json'},
+      const r = await fetch('/chat/stream', {
+        method: 'POST',
+        headers: {'content-type':'application/json'},
         body: JSON.stringify({ message, mode })
       });
-      const data = await r.json();
-      const reply = (data && data.reply) ? String(data.reply) : 'Sorry, no reply.';
-      add('assistant', reply);
+      if (!r.body) throw new Error('No stream');
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let acc = '';
+
+      while (true){
+        const { value, done } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+
+        for (const line of chunk.split(/\r?\n/)) {
+          if (!line.startsWith('data:')) continue;
+          const payload = line.replace(/^data:\s*/, '');
+          if (payload === '[DONE]') continue;
+          try {
+            const obj = JSON.parse(payload);
+            const piece = (typeof obj.text === 'string') ? obj.text
+                         : (typeof obj.delta === 'string') ? obj.delta
+                         : '';
+            if (piece) {
+              acc += piece;
+              b.innerHTML = acc;           // allow HTML (links, product HTML)
+              msgs.scrollTop = msgs.scrollHeight;
+            }
+          } catch { /* ignore keep-alives */ }
+        }
+      }
       hint.textContent = '';
     }catch(err){
-      add('assistant', 'Error contacting the agent.');
+      b.textContent = 'Error contacting the agent.';
       hint.textContent = String(err?.message || err);
     }finally{
       send.disabled = false;
     }
   }
 
-  // Build product cards HTML
+  /* product card helpers */
   function priceText(it){
-    if (typeof it.price === 'string' && it.price) return it.price;                 // /shopify/products
-    const p = it.priceFrom;                                                        // /shopify/search
-    if (p && p.amount) return `$${Number(p.amount).toFixed(2)} ${p.currencyCode||''}`.trim();
+    if (typeof it.price==='string' && it.price) return it.price; // /shopify/products
+    const p=it.priceFrom; if(p&&p.amount) return `$${Number(p.amount).toFixed(2)} ${p.currencyCode||''}`.trim();
     return '';
   }
   function cardsHTML(items){
-    const cards = (items||[]).slice(0,6).map(it => {
-      const img = it.image || '';
-      const href = it.url || '#';
-      const title = escapeHtml(it.title || '');
-      const price = escapeHtml(priceText(it));
+    const cards=(items||[]).slice(0,6).map(it=>{
+      const img=it.image||'';
+      const href=it.url ? withUTM(it.url) : '#';
+      const title=escapeHtml(it.title||'');
+      const price=escapeHtml(priceText(it));
+      const handle = it.handle || (href.includes('/products/') ? href.split('/products/')[1].split(/[?#]/)[0] : '');
       return `
         <div class="pCard">
-          <a href="${href}" target="_blank" rel="noopener noreferrer">
+          <a class="pLink" href="${href}" target="_blank" rel="noopener noreferrer">
             <img class="pImg" src="${img}" alt="${title}"/>
             <div class="pT">${title}</div>
             <div class="pP">${price}</div>
           </a>
+          <button class="pBuy" data-handle="${handle}">Add to cart</button>
         </div>
       `;
     }).join('');
-    return `<div class="cardgrid">${cards || '<div>No items found.</div>'}</div>`;
+    return `<div class="cardgrid">${cards||'<div>No items found.</div>'}</div>`;
   }
 
   async function showBestSellers(){
-    add('user', 'Best sellers');
-    send.disabled = true; hint.textContent = 'Loading products…';
-    try{
-      const r = await fetch('/shopify/products?limit=6');
-      const data = await r.json();
-      add('assistant', cardsHTML(data.items || []));
-    }catch(e){
-      add('assistant', 'Could not load products.');
-    }finally{
-      send.disabled = false; hint.textContent = '';
-    }
+    add('user','Best sellers'); send.disabled=true; hint.textContent='Loading products…';
+    try{ const r=await fetch('/shopify/products?limit=6'); const data=await r.json(); add('assistant',cardsHTML(data.items||[])); }
+    catch{ add('assistant','Could not load products.'); }
+    finally{ send.disabled=false; hint.textContent=''; }
   }
-
   async function showPrintersUnder150(){
-    add('user', 'Printers under $150');
-    send.disabled = true; hint.textContent = 'Searching…';
+    add('user','Printers under $150'); send.disabled=true; hint.textContent='Searching…';
     try{
-      const r = await fetch('/shopify/search?q=printer');
-      const data = await r.json();
-      const items = (data.items || []).filter(it => {
-        const p = it.priceFrom && it.priceFrom.amount ? parseFloat(it.priceFrom.amount) : NaN;
-        return !isNaN(p) && p < 150;
-      });
-      add('assistant', cardsHTML(items));
-    }catch(e){
-      add('assistant', 'Could not search products.');
-    }finally{
-      send.disabled = false; hint.textContent = '';
-    }
+      const r=await fetch('/shopify/search?q=printer'); const data=await r.json();
+      const items=(data.items||[]).filter(it=>{const p=it.priceFrom&&it.priceFrom.amount?parseFloat(it.priceFrom.amount):NaN;return !isNaN(p)&&p<150;});
+      add('assistant',cardsHTML(items));
+    }catch{ add('assistant','Could not search products.'); }
+    finally{ send.disabled=false; hint.textContent=''; }
   }
 
-  // Form submit
-  form.addEventListener('submit', (e) => {
+  // Add-to-cart button → tell parent Shopify page to add variant & go to /cart
+  msgs.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.pBuy');
+    if (!btn) return;
+    const handle = btn.dataset.handle || '';
+    if (!handle) return;
+    parent.postMessage({ type:'GA_ADD_TO_CART', payload:{ handle, quantity:1 } }, '*');
+  });
+
+  // simple submit (Enter sends)
+  form.addEventListener('submit',(e)=>{
     e.preventDefault();
-    const message = q.value.trim();
+    const message=q.value.trim();
     if(!message) return;
     sendMessage(message);
   });
 
-  // Enter to send, Shift+Enter for newline
-  q.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter' && !e.shiftKey){
-      e.preventDefault();
-      form.dispatchEvent(new Event('submit'));
-    }
-  });
-
-  // Quick-reply chips
+  // chips
   document.querySelectorAll('.chips button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const chip = btn.dataset.chip || '';
-      if (chip === 'bestsellers') return showBestSellers();
-      if (chip === 'under150')   return showPrintersUnder150();
-      const message = btn.dataset.msg || '';
-      const mode = btn.dataset.mode || 'free';
-      if(message) sendMessage(message, mode);
+    btn.addEventListener('click',()=>{
+      const chip=btn.dataset.chip||'';
+      if(chip==='bestsellers') return showBestSellers();
+      if(chip==='under150')   return showPrintersUnder150();
+      const message=btn.dataset.msg||'';
+      const mode=btn.dataset.mode||'free';
+      if(message) sendMessage(message,mode);
     });
   });
 
-  // greet
-  add('assistant', 'Hi! Ask me about products, bundles, or order help. Tip: use code GRANT8 for 8% off.');
+  add('assistant','Hi! Ask me about products, bundles, or order help. Tip: use code GRANT8 for 8% off.');
   q.focus();
 </script>
