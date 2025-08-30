@@ -9,8 +9,7 @@ const express = require("express");
 const mask = (k) => (k ? `${k.slice(0, 7)}…${k.slice(-4)}` : "missing");
 console.log("[env] OPENAI_API_KEY:", mask(process.env.OPENAI_API_KEY));
 
-// Use Node's built-in fetch (Node 18+)
-const fetch = (...args) => global.fetch(...args);
+const fetch = (...args) => global.fetch(...args); // Node 18+
 
 const app = express();
 
@@ -23,7 +22,6 @@ app.get("/healthz", (_req, res) => res.json({ ok: true }));
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN; // your-store.myshopify.com
 const SHOPIFY_STOREFRONT_TOKEN = process.env.SHOPIFY_STOREFRONT_TOKEN;
 
-// Quick env check
 app.get("/shopify/ping", (_req, res) => {
   res.json({
     domain: SHOPIFY_DOMAIN || null,
@@ -31,12 +29,9 @@ app.get("/shopify/ping", (_req, res) => {
   });
 });
 
-// Minimal Storefront GraphQL helper
 async function shopifyFetch(query, variables = {}) {
   if (!SHOPIFY_DOMAIN || !SHOPIFY_STOREFRONT_TOKEN) {
-    throw new Error(
-      "Shopify env missing. Set SHOPIFY_DOMAIN and SHOPIFY_STOREFRONT_TOKEN in .env"
-    );
+    throw new Error("Shopify env missing. Set SHOPIFY_DOMAIN and SHOPIFY_STOREFRONT_TOKEN in .env");
   }
   const r = await fetch(`https://${SHOPIFY_DOMAIN}/api/2025-01/graphql.json`, {
     method: "POST",
@@ -96,14 +91,9 @@ app.get("/shopify/products", async (req, res) => {
       data.products?.edges?.map(({ node }) => {
         const img = node.images?.edges?.[0]?.node || {};
         const v0 = node.variants?.nodes?.[0] || null;
-        const priceMoney =
-          v0?.price || node.priceRange?.minVariantPrice || null;
-        const price = priceMoney
-          ? `${priceMoney.amount} ${priceMoney.currencyCode}`
-          : null;
-        const compareAt = v0?.compareAtPrice
-          ? `${v0.compareAtPrice.amount} ${v0.compareAtPrice.currencyCode}`
-          : null;
+        const priceMoney = v0?.price || node.priceRange?.minVariantPrice || null;
+        const price = priceMoney ? `${priceMoney.amount} ${priceMoney.currencyCode}` : null;
+        const compareAt = v0?.compareAtPrice ? `${v0.compareAtPrice.amount} ${v0.compareAtPrice.currencyCode}` : null;
         return {
           id: node.id,
           title: node.title,
@@ -155,17 +145,14 @@ app.get("/shopify/product/:handle", async (req, res) => {
     const p = data?.product;
     if (!p) return res.status(404).json({ error: "Not found" });
 
-    const images = (p.images?.edges || []).map((e) => e.node);
-    const variants =
-      (p.variants?.nodes || []).map((v) => ({
-        id: v.id,
-        title: v.title,
-        availableForSale: !!v.availableForSale,
-        price: v.price ? `${v.price.amount} ${v.price.currencyCode}` : null,
-        compareAt: v.compareAtPrice
-          ? `${v.compareAtPrice.amount} ${v.compareAtPrice.currencyCode}`
-          : null,
-      })) || [];
+    const images = (p.images?.edges || []).map(e => e.node);
+    const variants = (p.variants?.nodes || []).map(v => ({
+      id: v.id,
+      title: v.title,
+      availableForSale: !!v.availableForSale,
+      price: v.price ? `${v.price.amount} ${v.price.currencyCode}` : null,
+      compareAt: v.compareAtPrice ? `${v.compareAtPrice.amount} ${v.compareAtPrice.currencyCode}` : null,
+    }));
 
     const primaryPrice =
       variants[0]?.price ||
@@ -221,7 +208,7 @@ app.get("/shopify/search", async (req, res) => {
     );
 
     const items =
-      data.products?.edges?.map((e) => ({
+      data.products?.edges?.map(e => ({
         id: e.node.id,
         title: e.node.title,
         handle: e.node.handle,
@@ -238,10 +225,9 @@ app.get("/shopify/search", async (req, res) => {
   }
 });
 
-/* ---------------------- Shopify Admin (orders) — single copy ------------ */
+/* ---------------------- Shopify Admin (orders) -------------------------- */
 const SHOPIFY_ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-const SHOPIFY_ADMIN_API_VERSION =
-  process.env.SHOPIFY_ADMIN_API_VERSION || "2025-01";
+const SHOPIFY_ADMIN_API_VERSION = process.env.SHOPIFY_ADMIN_API_VERSION || "2025-01";
 
 app.get("/shopify-admin/ping", (_req, res) => {
   res.json({
@@ -253,9 +239,7 @@ app.get("/shopify-admin/ping", (_req, res) => {
 
 async function shopifyAdminGraphQL(query, variables = {}) {
   if (!SHOPIFY_DOMAIN || !SHOPIFY_ADMIN_TOKEN) {
-    throw new Error(
-      "Admin env missing. Set SHOPIFY_DOMAIN and SHOPIFY_ADMIN_TOKEN in .env"
-    );
+    throw new Error("Admin env missing. Set SHOPIFY_DOMAIN and SHOPIFY_ADMIN_TOKEN in .env");
   }
   const url = `https://${SHOPIFY_DOMAIN}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`;
   const r = await fetch(url, {
@@ -276,9 +260,7 @@ async function shopifyAdminGraphQL(query, variables = {}) {
 
 async function findOrderByNameAndEmail(order_number, email) {
   const nameNumeric = String(order_number || "").replace(/^#/g, "");
-  const q = `name:${nameNumeric} AND email:${String(email || "")
-    .trim()
-    .toLowerCase()}`;
+  const q = `name:${nameNumeric} AND email:${String(email || "").trim().toLowerCase()}`;
 
   const query = /* GraphQL */ `
     query FindOrder($first:Int!, $q:String!) {
@@ -331,10 +313,7 @@ async function findOrderByNameAndEmail(order_number, email) {
     email: order.email,
     financial_status: order.displayFinancialStatus,
     fulfillment_status: order.displayFulfillmentStatus,
-    line_items: order.lineItems.nodes.map((n) => ({
-      title: n.name,
-      qty: n.quantity,
-    })),
+    line_items: order.lineItems.nodes.map(n => ({ title: n.name, qty: n.quantity })),
     tracking,
   };
 }
@@ -345,17 +324,12 @@ app.post("/order-status", async (req, res) => {
     const order_number = String(req.body?.order_number || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!order_number || !email) {
-      return res
-        .status(400)
-        .json({ error: "Provide 'order_number' and 'email' in the body." });
+      return res.status(400).json({ error: "Provide 'order_number' and 'email' in the body." });
     }
     const data = await findOrderByNameAndEmail(order_number, email);
-    if (!data.found)
-      return res.json({
-        found: false,
-        note:
-          "No matching order. Check the order number and the exact email on the order.",
-      });
+    if (!data.found) {
+      return res.json({ found: false, note: "No matching order. Check the order number and the exact email on the order." });
+    }
     res.json(data);
   } catch (e) {
     console.error("POST /order-status error:", e);
@@ -364,14 +338,7 @@ app.post("/order-status", async (req, res) => {
 });
 
 /* ---------------------------- Chat endpoints ---------------------------- */
-const OPENAI_MODEL = "gpt-4.1-mini";
-
-// --- Promo reply config (8% code) ---
-const PROMO_MESSAGE =
-  process.env.PROMO_MESSAGE ||
-  "Get 8% off your order at TheGrantedSolutions.com — use code GRANT8 at checkout!";
-const PROMO_REGEX =
-  /\b(offer|discount|coupon|promo|code|deal|sale|special)\b/i;
+const OPENAI_MODEL = "gpt-4o-mini";
 
 const BRAND_SYSTEM = `
 You are the ecommerce assistant for TheGrantedSolutions.com (tech gadgets & gifts).
@@ -397,13 +364,11 @@ const presets = {
   ],
   bundleOffer: (msg, product = {}) => {
     const printerName = product.printerName || PRODUCT_KB.printerC80.name;
-    const paperName = product.paperName || PRODUCT_KB.a4Paper.name;
-    const printerUrl = product.printerUrl || PRODUCT_KB.printerC80.url;
-    const paperUrl = product.paperUrl || PRODUCT_KB.a4Paper.url;
+    const paperName   = product.paperName   || PRODUCT_KB.a4Paper.name;
+    const printerUrl  = product.printerUrl  || PRODUCT_KB.printerC80.url;
+    const paperUrl    = product.paperUrl    || PRODUCT_KB.a4Paper.url;
 
-    const sys =
-      BRAND_SYSTEM +
-      `
+    const sys = BRAND_SYSTEM + `
 Task: Create a concise bundle/upsell pitch (max 2 lines).
 - Return HTML with two <a> links:
   • ${printerName} -> ${printerUrl}
@@ -414,10 +379,7 @@ Task: Create a concise bundle/upsell pitch (max 2 lines).
 `;
     return [
       { role: "system", content: sys },
-      {
-        role: "user",
-        content: msg || "Create a bundle offer for these two products.",
-      },
+      { role: "user", content: msg || "Create a bundle offer for these two products." },
     ];
   },
 };
@@ -427,123 +389,71 @@ const composeInput = (mode, message, product = {}) => {
   return mode === "bundleOffer" ? fn(message, product) : fn(message);
 };
 
-// Non-stream chat with order lookup + promo auto-reply
+// Non-stream chat (Chat Completions) + quick echo test
 app.post("/chat", async (req, res) => {
   try {
     const { message = "", mode = "free", product = {} } = req.body || {};
     const msg = String(message || "").trim();
     const key = process.env.OPENAI_API_KEY;
 
-    // Detect email + order number
-    const email =
-      (msg.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0]
-        ?.toLowerCase() || null;
-    const orderMatch = msg.match(
-      /(?:order\s*(?:number|no\.|#)?\s*|#)\s*(\d{3,10})\b/i
-    );
+    // --- TEMP quick echo to prove round-trip works ---
+    if (msg.toLowerCase().startsWith("test:")) {
+      return res.json({ reply: `Echo ✅ ${msg.slice(5).trim()}` });
+    }
+
+    // Detect email + order number for Admin lookup
+    const email = (msg.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0]?.toLowerCase() || null;
+    const orderMatch = msg.match(/(?:order\s*(?:number|no\.|#)?\s*|#)\s*(\d{3,10})\b/i);
     const order_number = orderMatch ? orderMatch[1] : null;
 
-    // If both present + admin token available -> lookup
     if (email && order_number && process.env.SHOPIFY_ADMIN_TOKEN) {
       try {
         const result = await findOrderByNameAndEmail(order_number, email);
         if (result.found) {
-          const items = result.line_items
-            .slice(0, 4)
-            .map((li) => `${li.qty}× ${li.title}`)
-            .join(", ");
+          const items = result.line_items.slice(0, 4).map(li => `${li.qty}× ${li.title}`).join(", ");
           const t = result.tracking?.[0] || null;
           const trackingText = t
-            ? t.url
-              ? `Tracking: ${t.url}`
-              : `Tracking: ${[t.company, t.number].filter(Boolean).join(" ")}`
+            ? (t.url ? `Tracking: ${t.url}` : `Tracking: ${[t.company, t.number].filter(Boolean).join(" ")}`)
             : "No tracking yet.";
-          const reply = `Order ${result.name} — ${result.fulfillment_status}. ${trackingText}${
-            items ? ` Items: ${items}.` : ""
-          }`;
-          return res.json({
-            reply,
-            order: {
-              name: result.name,
-              email: result.email,
-              status: result.fulfillment_status,
-              tracking: result.tracking,
-            },
-          });
+          const reply = `Order ${result.name} — ${result.fulfillment_status}. ${trackingText}${items ? ` Items: ${items}.` : ""}`;
+          return res.json({ reply, order: { name: result.name, email: result.email, status: result.fulfillment_status, tracking: result.tracking } });
         } else {
-          return res.json({
-            reply: `I couldn’t find order #${order_number} for ${email}. Double-check the order number and the exact email on the order.`,
-          });
+          return res.json({ reply: `I couldn’t find order #${order_number} for ${email}. Double-check the order number and the exact email on the order.` });
         }
       } catch (e) {
         console.error("Lookup failed:", e);
-        // fall through to normal AI reply
+        // continue to normal AI reply
       }
     }
 
-    // Ask for missing piece if only one provided
     if ((order_number && !email) || (email && !order_number)) {
       const missing = !email ? "the email used on the order" : "the order number";
       return res.json({ reply: `Got it. Please provide ${missing} so I can look it up.` });
     }
 
-    // ⚡️ Instant promo reply (no OpenAI call)
-    if (PROMO_MESSAGE && PROMO_REGEX.test(msg)) {
-      return res.json({ reply: PROMO_MESSAGE });
-    }
+    if (!key) return res.status(500).json({ error: "OPENAI_API_KEY missing in environment" });
 
-    // Normal AI chat
-    const input = composeInput(mode, msg, product);
-    if (!key)
-      return res
-        .status(500)
-        .json({ error: "OPENAI_API_KEY missing in environment" });
-
-    const upstream = await fetch("https://api.openai.com/v1/responses", {
+    // --- Simple Chat Completions call ---
+    const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: OPENAI_MODEL, input }),
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: composeInput(mode, msg, product),
+      }),
     });
 
     const data = await upstream.json().catch(() => ({}));
-    if (!upstream.ok)
-      console.error(
-        "OpenAI non-200:",
-        upstream.status,
-        upstream.statusText,
-        data
-      );
-
-    function extractTextFromResponses(d) {
-      if (typeof d?.output_text === "string" && d.output_text.trim())
-        return d.output_text.trim();
-      if (Array.isArray(d?.output)) {
-        const chunks = [];
-        for (const block of d.output) {
-          const parts = Array.isArray(block?.content)
-            ? block.content
-            : block?.content
-            ? [block.content]
-            : [];
-          for (const p of parts) {
-            const t = p?.text ?? p?.content ?? p?.delta;
-            if (typeof t === "string") chunks.push(t);
-          }
-        }
-        const joined = chunks.join("").trim();
-        if (joined) return joined;
-      }
-      if (typeof d?.response?.content?.[0]?.text === "string")
-        return d.response.content[0].text.trim();
-      if (Array.isArray(d?.choices) && d.choices[0]) {
-        const c = d.choices[0];
-        const t = c?.text || c?.message?.content || c?.delta?.content;
-        if (typeof t === "string" && t.trim()) return t.trim();
-      }
-      return null;
+    if (!upstream.ok) {
+      console.error("OpenAI non-200:", upstream.status, upstream.statusText, data);
     }
 
-    const text = extractTextFromResponses(data) || "Sorry, I could not parse a reply.";
+    const text =
+      data?.choices?.[0]?.message?.content?.trim?.() ||
+      "Sorry, I couldn’t parse a reply.";
     res.json({ reply: text });
   } catch (e) {
     console.error("POST /chat error:", e);
