@@ -5,13 +5,20 @@
 <style>
   :root{--bg:#fff;--fg:#111;--muted:#666;--brand:#111}
   body{margin:0;background:#f7f7f8;font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--fg)}
-  .wrap{max-width:420px;margin:0 auto;padding:14px}
+  .wrap{max-width:420px;margin:24px auto;padding:14px}
   .card{background:var(--bg);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:16px}
-  .h{font-weight:700;font-size:20px;margin:0 0 6px}
+
+  .hdr{display:flex;justify-content:space-between;align-items:center;margin:0 0 6px}
+  .h{font-weight:700;font-size:20px;margin:0}
+  .st{font-size:12px;border-radius:999px;padding:2px 8px;background:#eee;color:#333}
+  .st.ok{background:#e9f7ef;color:#146c2e}
+  .st.err{background:#fde8e8;color:#a61b1b}
+
   .sub{color:var(--muted);font-size:13px;margin:0 0 10px}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
   .chips button{background:#f1f1f5;color:#111;border:0;border-radius:999px;padding:8px 12px;cursor:pointer}
   .chips button:hover{filter:brightness(.97)}
+
   .msgs{height:360px;overflow:auto;border:1px solid #eee;border-radius:12px;padding:12px;background:#fff}
   .msg{margin:6px 0;max-width:85%}
   .me{margin-left:auto;text-align:right}
@@ -20,28 +27,35 @@
   .bubble{display:inline-block;padding:10px 12px;border-radius:14px;word-wrap:break-word;white-space:pre-wrap}
   .bubble a{ text-decoration: underline; color: inherit; }
   .bubble a:hover{ opacity:.85 }
+
+  .cardgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:6px 0}
+  .pCard{background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee}
+  .pCard a{display:block;text-decoration:none;color:inherit}
+  .pImg{width:100%;aspect-ratio:1/1;object-fit:cover;background:#f6f6f7}
+  .pT{font-weight:600;font-size:13px;padding:8px 8px 4px}
+  .pP{font-size:12px;color:#444;padding:0 8px 10px}
+
   form{display:flex;gap:8px;margin-top:12px}
   textarea{flex:1;resize:none;height:70px;border:1px solid #ddd;border-radius:12px;padding:10px}
   button{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:0 16px;font-weight:600}
   button[disabled]{opacity:.6;cursor:not-allowed}
-  .hint{font-size:12px;color:#777;margin-top:8px}
-  .err{background:#fee;border:1px solid #fbb;color:#900}
+  .hint{font-size:12px;color:#777;margin-top:8px;min-height:16px}
 </style>
 
 <div class="wrap">
   <div class="card">
-    <h1 class="h">Granted Agent</h1>
-    <p class="sub">Try these:</p>
+    <div class="hdr">
+      <h1 class="h">Granted Agent</h1>
+      <span id="st" class="st">Checking…</span>
+    </div>
+    <p class="sub">Quick actions:</p>
 
-    <!-- Quick chips -->
     <div class="chips">
-      <button data-chip="ping">Ping</button>
-      <button data-chip="echo">Echo test</button>
       <button data-msg="Do you have a discount code?">8% promo</button>
       <button data-mode="bundleOffer" data-msg="Create a bundle offer for the C80 printer and A4 paper.">Bundle offer</button>
       <button data-chip="bestsellers">Best sellers</button>
       <button data-chip="under150">Printers &lt; $150</button>
-      <button data-msg="Where is my order #1783? my email is alice@example.com">Order status</button>
+      <button data-msg="Order status for #1783, email alice@example.com">Order status</button>
     </div>
 
     <div id="msgs" class="msgs"></div>
@@ -55,21 +69,29 @@
 </div>
 
 <script>
+  /* ---------- Config ---------- */
+  const API_BASE = new URL('/', window.location.href).origin; // absolute base
+  const PROMO = new URLSearchParams(location.search).get('promo') || 'GRANT8';
+
   const msgs = document.getElementById('msgs');
   const form = document.getElementById('f');
   const q = document.getElementById('q');
   const send = document.getElementById('send');
   const hint = document.getElementById('hint');
+  const st = document.getElementById('st');
 
-  function add(role, html, isError=false){
+  /* ---------- Utilities ---------- */
+  function esc(s){ return String(s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+  function add(role, html){
     const row = document.createElement('div');
-    row.className = 'msg ' + (role === 'user' ? 'me' : 'them');
+    row.className = 'msg ' + (role==='user'?'me':'them');
     const b = document.createElement('div');
-    b.className = 'bubble' + (isError ? ' err' : '');
-    if (role === 'assistant') {
+    b.className = 'bubble';
+    if(role==='assistant'){
       b.innerHTML = html;
-      b.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel='noopener noreferrer'; });
-    } else {
+      b.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer';});
+    }else{
       b.textContent = html;
     }
     row.appendChild(b);
@@ -77,146 +99,141 @@
     msgs.scrollTop = msgs.scrollHeight;
   }
 
-  function timeout(ms){ return new Promise((_, rej)=>setTimeout(()=>rej(new Error('Timeout after '+ms+'ms')), ms)); }
-
-  async function sendMessage(message, mode='free'){
-    add('user', message);
-    q.value = ''; q.focus();
-    send.disabled = true; hint.textContent = 'Thinking…';
-
-    const ac = new AbortController();
-    const t = setTimeout(()=>ac.abort(), 20000); // 20s safety timeout
-
+  // Status badge
+  (async function(){
     try{
-      const res = await Promise.race([
-        fetch('/chat', {
-          method:'POST',
-          headers:{'content-type':'application/json'},
-          body: JSON.stringify({ message, mode }),
-          signal: ac.signal
-        }),
-        timeout(21000)
-      ]);
-      clearTimeout(t);
-
-      if (!res.ok){
-        const text = await res.text().catch(()=>String(res.status));
-        add('assistant', 'Server error: ' + text, true);
-        hint.textContent = '';
-        return;
-      }
-      const data = await res.json().catch(()=> ({}));
-      if (data.error){
-        add('assistant', 'Agent error: ' + String(data.error), true);
-      }else{
-        const reply = (data && data.reply) ? String(data.reply) : 'Sorry, no reply.';
-        add('assistant', reply);
-      }
-      hint.textContent = '';
-    }catch(err){
-      add('assistant', 'Network/timeout: ' + String(err?.message || err), true);
-      hint.textContent = '';
-    }finally{
-      clearTimeout(t);
-      send.disabled = false;
+      const r = await fetch(API_BASE + '/healthz', {cache:'no-store'});
+      st.textContent = r.ok ? 'Connected' : 'Server issue';
+      st.className = 'st ' + (r.ok ? 'ok' : 'err');
+    }catch(e){
+      st.textContent = 'Offline';
+      st.className = 'st err';
     }
-  }
+  })();
 
-  // product helpers
+  /* ---------- Product cards ---------- */
   function priceText(it){
-    if (typeof it.price === 'string' && it.price) return it.price;
-    const p = it.priceFrom;
+    if (typeof it.price === 'string' && it.price) return it.price; // /shopify/products
+    const p = it.priceFrom; // /shopify/search
     if (p && p.amount) return `$${Number(p.amount).toFixed(2)} ${p.currencyCode||''}`.trim();
     return '';
   }
+
   function cardsHTML(items){
     const cards = (items||[]).slice(0,6).map(it => {
       const img = it.image || '';
       const href = it.url || '#';
-      const title = String(it.title || '');
+      const title = esc(it.title || '');
+      const handle = (it.handle || '').replace(/"/g,'&quot;');
       const price = priceText(it);
+
       return `
-        <div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee">
-          <a href="${href}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block">
-            <img src="${img}" alt="${title}" style="width:100%;aspect-ratio:1/1;object-fit:cover;background:#f6f6f7"/>
-            <div style="font-weight:600;font-size:13px;padding:8px 8px 4px">${title}</div>
-            <div style="font-size:12px;color:#444;padding:0 8px 10px">${price}</div>
+        <div class="pCard">
+          <a href="${href}" target="_blank" rel="noopener noreferrer">
+            <img class="pImg" src="${img}" alt="${title}"/>
+            <div class="pT">${title}</div>
+            <div class="pP">${esc(price)}</div>
           </a>
+          <button
+            style="margin:8px; width:calc(100% - 16px); border:1px solid #eee; border-radius:10px; padding:8px; cursor:pointer"
+            onclick="window.parent.postMessage({type:'GA_ADD_TO_CART', payload:{handle:'${handle}', quantity:1}}, '*')">
+            Add to cart
+          </button>
         </div>
       `;
     }).join('');
-    return `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:6px 0">${cards || '<div>No items found.</div>'}</div>`;
+    return `<div class="cardgrid">${cards || '<div>No items found.</div>'}</div>`;
+  }
+
+  /* ---------- Chat ---------- */
+  async function sendMessage(message, mode='free'){
+    add('user', message);
+    q.value=''; q.focus(); send.disabled=true; hint.textContent='Thinking…';
+    try{
+      const ctrl = new AbortController();
+      const timer = setTimeout(()=>ctrl.abort(), 20000); // 20s timeout
+      const r = await fetch(API_BASE + '/chat', {
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body: JSON.stringify({ message, mode }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+
+      if(!r.ok){
+        const t = await r.text().catch(()=> '');
+        throw new Error(`HTTP ${r.status} — ${t.slice(0,160)}`);
+      }
+      const data = await r.json();
+      const reply = (data && data.reply) ? String(data.reply) : '';
+      add('assistant', reply || 'Hmm, I hit a snag. Please try again in a moment.');
+      hint.textContent = '';
+    }catch(err){
+      console.error('chat error', err);
+      add('assistant', 'Hmm, I hit a snag. Please try again in a moment.');
+      hint.textContent = (err && err.message) ? err.message : 'Request failed';
+    }finally{
+      send.disabled = false;
+    }
   }
 
   async function showBestSellers(){
-    add('user', 'Best sellers');
-    send.disabled = true; hint.textContent = 'Loading products…';
+    add('user','Best sellers'); send.disabled=true; hint.textContent='Loading…';
     try{
-      const r = await fetch('/shopify/products?limit=6');
+      const r = await fetch(API_BASE + '/shopify/products?limit=6');
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
-      add('assistant', cardsHTML(data.items || []));
+      add('assistant', cardsHTML(data.items||[])); hint.textContent='';
     }catch(e){
-      add('assistant', 'Could not load products.', true);
-    }finally{
-      send.disabled = false; hint.textContent = '';
-    }
+      add('assistant','Could not load products.');
+      hint.textContent = e.message || 'Request failed';
+    }finally{ send.disabled=false; }
   }
+
   async function showPrintersUnder150(){
-    add('user', 'Printers under $150');
-    send.disabled = true; hint.textContent = 'Searching…';
+    add('user','Printers under $150'); send.disabled=true; hint.textContent='Searching…';
     try{
-      const r = await fetch('/shopify/search?q=printer');
+      const r = await fetch(API_BASE + '/shopify/search?q=printer');
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
-      const items = (data.items || []).filter(it => {
+      const items = (data.items||[]).filter(it=>{
         const p = it.priceFrom && it.priceFrom.amount ? parseFloat(it.priceFrom.amount) : NaN;
         return !isNaN(p) && p < 150;
       });
-      add('assistant', cardsHTML(items));
+      add('assistant', cardsHTML(items)); hint.textContent='';
     }catch(e){
-      add('assistant', 'Could not search products.', true);
-    }finally{
-      send.disabled = false; hint.textContent = '';
-    }
+      add('assistant','Could not search products.');
+      hint.textContent = e.message || 'Request failed';
+    }finally{ send.disabled=false; }
   }
 
-  // chips
-  document.querySelectorAll('.chips button').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const chip = btn.dataset.chip || '';
-      if (chip === 'ping'){
-        try{
-          const r = await fetch('/healthz'); const j = await r.json();
-          add('assistant', 'Health: ' + JSON.stringify(j));
-        }catch{ add('assistant', 'Health check failed.', true); }
-        return;
-      }
-      if (chip === 'echo'){
-        return sendMessage('test:hello'); // NOTE the colon
-      }
-      if (chip === 'bestsellers') return showBestSellers();
-      if (chip === 'under150')   return showPrintersUnder150();
-
-      const message = btn.dataset.msg || '';
-      const mode = btn.dataset.mode || 'free';
-      if(message) sendMessage(message, mode);
-    });
-  });
-
-  // form behaviors
-  form.addEventListener('submit', (e) => {
+  /* ---------- Events ---------- */
+  form.addEventListener('submit', (e)=>{
     e.preventDefault();
     const message = q.value.trim();
     if(!message) return;
     sendMessage(message);
   });
-  q.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter' && !e.shiftKey){
+
+  q.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter' && !e.shiftKey){
       e.preventDefault();
       form.dispatchEvent(new Event('submit'));
     }
   });
 
-  // greet
-  add('assistant', 'Hi! Ask me about products, bundles, or order help. Tip: use code GRANT8 for 8% off.');
+  document.querySelectorAll('.chips button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const chip = btn.dataset.chip || '';
+      if (chip === 'bestsellers') return showBestSellers();
+      if (chip === 'under150')   return showPrintersUnder150();
+      const message = btn.dataset.msg || '';
+      const mode = btn.dataset.mode || 'free';
+      if(message) sendMessage(message.replace('discount code','discount code (use ' + PROMO + ' for 8% off)'), mode);
+    });
+  });
+
+  // Greet
+  add('assistant', `Hi! Ask me about products, bundles, or order help. Tip: use code ${PROMO} for 8% off.`);
   q.focus();
 </script>
